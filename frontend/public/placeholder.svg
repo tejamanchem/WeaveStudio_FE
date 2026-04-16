@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" viewBox="0 0 400 500">
+  <rect width="400" height="500" fill="#f3f4f6"/>
+  <text x="200" y="240" text-anchor="middle" font-family="system-ui" font-size="16" fill="#9ca3af">No Image</text>
+  <text x="200" y="265" text-anchor="middle" font-family="system-ui" font-size="13" fill="#d1d5db">Upload via Admin</text>
+</svg>
