@@ -29,6 +29,7 @@ export const trackOrder = (params) => api.get('/orders/track', { params });
 // Admin
 export const adminLogin = (data) => api.post('/admin/login', data);
 export const getAdminOrders = (params) => api.get('/admin/orders', { params });
+export const getOrders = getAdminOrders;
 export const updateOrderStatus = (id, status) => api.patch(`/admin/orders/${id}`, { status });
 export const createProduct = (data) => api.post('/admin/products', data);
 export const updateProduct = (id, data) => api.put(`/admin/products/${id}`, data);

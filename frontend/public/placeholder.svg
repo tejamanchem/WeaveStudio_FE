@@ -1,5 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" viewBox="0 0 400 500">
-  <rect width="400" height="500" fill="#f3f4f6"/>
-  <text x="200" y="240" text-anchor="middle" font-family="system-ui" font-size="16" fill="#9ca3af">No Image</text>
-  <text x="200" y="265" text-anchor="middle" font-family="system-ui" font-size="13" fill="#d1d5db">Upload via Admin</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750" viewBox="0 0 600 750" fill="none">
+  <rect width="600" height="750" fill="#F4EFEA"/>
+  <circle cx="300" cy="330" r="110" fill="#EAE1D6" stroke="#DBCBBB" stroke-width="2" stroke-dasharray="6 6"/>
+  <!-- Decorative Yarn & Crochet Motif -->
+  <path d="M260 330C260 305 280 285 305 285C330 285 345 305 345 325C345 350 325 365 300 365C280 365 270 350 270 335" stroke="#C86D51" stroke-width="4" stroke-linecap="round"/>
+  <path d="M305 285C320 270 345 270 360 285C375 300 375 325 360 340" stroke="#76925E" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="300" cy="330" r="16" fill="#C86D51"/>
+  <!-- Hook needle -->
+  <path d="M240 380L340 280C348 272 355 275 355 282C355 286 350 292 345 297" stroke="#8E6E53" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="300" y="475" text-anchor="middle" font-family="'Playfair Display', Georgia, serif" font-size="24" font-weight="600" fill="#3D2A1C">WeaveStudio</text>
+  <text x="300" y="505" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="13" font-weight="500" letter-spacing="2" fill="#8E6E53">HANDCRAFTED CREATION</text>
+  <text x="300" y="530" text-anchor="middle" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="12" fill="#B8B4AE">Image coming soon</text>
 </svg>

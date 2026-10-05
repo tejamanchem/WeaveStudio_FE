@@ -1,27 +1,106 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import {
+  Search,
+  Filter,
+  ShoppingCart,
+  Clock,
+  Truck,
+  CheckCircle2,
+  Eye,
+  BellRing,
+  RotateCcw,
+  SlidersHorizontal,
+  ChevronRight,
+  Sparkles,
+  Store,
+  Plus,
+} from 'lucide-react';
 import { getAdminOrders, updateOrderStatus } from '@/lib/api';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import OrderDetailsDrawer from '@/components/admin/OrderDetailsDrawer';
+import ManualOrderModal from '@/components/admin/ManualOrderModal';
 import toast from 'react-hot-toast';
 
-export default function AdminOrdersPage() {
+function OrdersPageContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const urlOrderId = searchParams.get('orderId') || '';
+
   const [orders, setOrders] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [filterStatus, setFilterStatus] = useState('');
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState(urlOrderId);
+  const [priceRange, setPriceRange] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+
+  // Selected Order for Drawer
+  const [selectedOrder, setSelectedOrder] = useState(null);
+
+  // Manual Offline Order Modal
+  const [showManualModal, setShowManualModal] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get('new') === 'manual') {
+      setShowManualModal(true);
+    }
+  }, [searchParams]);
 
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const params = { page, limit: 15 };
-      if (filterStatus) params.status = filterStatus;
+      const params = { page, limit: 25 };
+      if (statusFilter) params.status = statusFilter;
       const res = await getAdminOrders(params);
-      setOrders(res.data.orders);
-      setTotalPages(res.data.totalPages);
+      let list = res.data.orders || [];
+
+      // Client search filter (Order ID, Customer name, phone, email)
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        list = list.filter(
+          (o) =>
+            o.orderId.toLowerCase().includes(q) ||
+            o.customerName.toLowerCase().includes(q) ||
+            o.phone.toLowerCase().includes(q) ||
+            o.email.toLowerCase().includes(q)
+        );
+      }
+
+      // Price filter
+      if (priceRange === 'under-500') {
+        list = list.filter((o) => o.totalAmount < 500);
+      } else if (priceRange === '500-1000') {
+        list = list.filter((o) => o.totalAmount >= 500 && o.totalAmount <= 1000);
+      } else if (priceRange === 'above-1000') {
+        list = list.filter((o) => o.totalAmount > 1000);
+      }
+
+      // Sorting
+      if (sortBy === 'amount-desc') {
+        list = [...list].sort((a, b) => b.totalAmount - a.totalAmount);
+      } else if (sortBy === 'amount-asc') {
+        list = [...list].sort((a, b) => a.totalAmount - b.totalAmount);
+      }
+
+      setOrders(list);
+      setTotalCount(res.data.total || list.length);
+      setTotalPages(res.data.totalPages || 1);
+
+      // Auto-open if query matches specific order
+      if (urlOrderId) {
+        const matched = list.find((o) => o.orderId.toLowerCase() === urlOrderId.toLowerCase());
+        if (matched) setSelectedOrder(matched);
+      }
     } catch {
-      toast.error('Failed to load orders');
+      toast.error('Failed to load orders from studio');
     } finally {
       setLoading(false);
     }
@@ -29,7 +108,7 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-  }, [page, filterStatus]);
+  }, [page, statusFilter, priceRange, sortBy, searchQuery]);
 
   const handleStatusChange = async (orderId, newStatus) => {
     try {
@@ -37,87 +116,271 @@ export default function AdminOrdersPage() {
       setOrders((prev) =>
         prev.map((o) => (o._id === orderId ? { ...o, status: newStatus } : o))
       );
-      toast.success('Status updated');
+      if (selectedOrder && selectedOrder._id === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: newStatus });
+      }
+      toast.success(`Order status updated to ${newStatus}`);
     } catch {
       toast.error('Failed to update status');
     }
   };
 
+  const handleClearFilters = () => {
+    setStatusFilter('');
+    setSearchQuery('');
+    setPriceRange('all');
+    setSortBy('newest');
+    setPage(1);
+    router.replace('/admin/orders');
+  };
+
+  // Metrics for top cards
+  const placedCount = orders.filter((o) => o.status === 'PLACED').length;
+  const shippedCount = orders.filter((o) => o.status === 'SHIPPED').length;
+  const deliveredCount = orders.filter((o) => o.status === 'DELIVERED').length;
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Orders</h1>
-        <select
-          value={filterStatus}
-          onChange={(e) => {
-            setFilterStatus(e.target.value);
-            setPage(1);
-          }}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
-        >
-          <option value="">All Statuses</option>
-          <option value="PLACED">Placed</option>
-          <option value="SHIPPED">Shipped</option>
-          <option value="DELIVERED">Delivered</option>
-        </select>
+    <div className="space-y-8">
+      {/* Title */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-100 text-charcoal-800 text-[11px] font-semibold mb-1">
+            <Sparkles className="w-3.5 h-3.5 text-terracotta-500" />
+            <span>Atelier Fulfillment Hub</span>
+          </div>
+          <h1 className="font-serif text-3xl font-bold text-charcoal-900">
+            Order Lifecycle Management
+          </h1>
+          <p className="text-xs text-charcoal-500 mt-0.5">
+            Track crafting progress, delivery updates, and direct customer communication
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowManualModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-charcoal-900 hover:bg-terracotta-600 text-white text-xs font-semibold shadow-soft hover:shadow-card transition-all group"
+          >
+            <Store className="w-4 h-4 text-terracotta-400 group-hover:text-white transition-colors" />
+            <span>+ Record Offline Order</span>
+          </button>
+        </div>
       </div>
 
+      {/* Summary Status Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <button
+          onClick={() => {
+            setStatusFilter('');
+            setPage(1);
+          }}
+          className={`p-4 rounded-3xl border text-left transition-all ${
+            !statusFilter
+              ? 'bg-charcoal-900 text-white shadow-soft border-charcoal-900'
+              : 'bg-white text-charcoal-800 border-brand-200/80 hover:bg-brand-50'
+          }`}
+        >
+          <span className="text-[11px] font-bold uppercase tracking-wider opacity-75">All Orders</span>
+          <p className="font-serif text-2xl font-bold mt-1">{totalCount}</p>
+        </button>
+
+        <button
+          onClick={() => {
+            setStatusFilter('PLACED');
+            setPage(1);
+          }}
+          className={`p-4 rounded-3xl border text-left transition-all ${
+            statusFilter === 'PLACED'
+              ? 'bg-amber-600 text-white shadow-soft border-amber-600'
+              : 'bg-white text-charcoal-800 border-brand-200/80 hover:bg-brand-50'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider opacity-75">Crafting (PLACED)</span>
+            <Clock className="w-4 h-4 opacity-70" />
+          </div>
+          <p className="font-serif text-2xl font-bold mt-1">{placedCount}</p>
+        </button>
+
+        <button
+          onClick={() => {
+            setStatusFilter('SHIPPED');
+            setPage(1);
+          }}
+          className={`p-4 rounded-3xl border text-left transition-all ${
+            statusFilter === 'SHIPPED'
+              ? 'bg-blue-600 text-white shadow-soft border-blue-600'
+              : 'bg-white text-charcoal-800 border-brand-200/80 hover:bg-brand-50'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider opacity-75">In Transit (SHIPPED)</span>
+            <Truck className="w-4 h-4 opacity-70" />
+          </div>
+          <p className="font-serif text-2xl font-bold mt-1">{shippedCount}</p>
+        </button>
+
+        <button
+          onClick={() => {
+            setStatusFilter('DELIVERED');
+            setPage(1);
+          }}
+          className={`p-4 rounded-3xl border text-left transition-all ${
+            statusFilter === 'DELIVERED'
+              ? 'bg-sage-700 text-white shadow-soft border-sage-700'
+              : 'bg-white text-charcoal-800 border-brand-200/80 hover:bg-brand-50'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider opacity-75">Delivered</span>
+            <CheckCircle2 className="w-4 h-4 opacity-70" />
+          </div>
+          <p className="font-serif text-2xl font-bold mt-1">{deliveredCount}</p>
+        </button>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-brand-200/80 shadow-soft space-y-3">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+          {/* Global Order Search */}
+          <div className="relative w-full md:w-80">
+            <Search className="w-4 h-4 text-charcoal-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by ID, patron name, phone..."
+              className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-brand-200 bg-brand-50/40 text-xs font-semibold text-charcoal-900 focus:outline-none focus:ring-1 focus:ring-charcoal-900"
+            />
+          </div>
+
+          {/* Filters & Sorters */}
+          <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            {/* Status dropdown */}
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 rounded-2xl bg-brand-50/70 border border-brand-200 text-xs font-semibold text-charcoal-800 cursor-pointer"
+            >
+              <option value="">All Statuses</option>
+              <option value="PLACED">Crafting in Atelier (PLACED)</option>
+              <option value="SHIPPED">Dispatched (SHIPPED)</option>
+              <option value="DELIVERED">Delivered to Patron</option>
+            </select>
+
+            {/* Price range */}
+            <select
+              value={priceRange}
+              onChange={(e) => setPriceRange(e.target.value)}
+              className="px-3 py-2 rounded-2xl bg-brand-50/70 border border-brand-200 text-xs font-semibold text-charcoal-800 cursor-pointer"
+            >
+              <option value="all">All Amounts</option>
+              <option value="under-500">Under ₹500</option>
+              <option value="500-1000">₹500 — ₹1,000</option>
+              <option value="above-1000">Above ₹1,000</option>
+            </select>
+
+            {/* Sorter */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-3 py-2 rounded-2xl bg-brand-50/70 border border-brand-200 text-xs font-semibold text-charcoal-800 cursor-pointer"
+            >
+              <option value="newest">Newest First</option>
+              <option value="amount-desc">Amount: High to Low</option>
+              <option value="amount-asc">Amount: Low to High</option>
+            </select>
+
+            {(statusFilter || searchQuery || priceRange !== 'all') && (
+              <button
+                onClick={handleClearFilters}
+                className="p-2 text-charcoal-400 hover:text-terracotta-600 rounded-xl"
+                title="Reset Filters"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Orders Table */}
       {loading ? (
-        <LoadingSpinner />
+        <LoadingSpinner label="Refreshing atelier orders..." />
       ) : (
-        <>
-          <div className="bg-white rounded-lg border overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600">
+        <div className="bg-white rounded-3xl border border-brand-200/80 shadow-soft overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-brand-50/60 text-charcoal-600 text-left border-b border-brand-100">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium">Order ID</th>
-                  <th className="text-left px-4 py-3 font-medium">Customer</th>
-                  <th className="text-left px-4 py-3 font-medium">Phone</th>
-                  <th className="text-left px-4 py-3 font-medium">Items</th>
-                  <th className="text-left px-4 py-3 font-medium">Total</th>
-                  <th className="text-left px-4 py-3 font-medium">Status</th>
-                  <th className="text-left px-4 py-3 font-medium">Date</th>
+                  <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[11px]">Order ID</th>
+                  <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[11px]">Patron</th>
+                  <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[11px]">Pieces</th>
+                  <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[11px]">Total</th>
+                  <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[11px]">Order Date</th>
+                  <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[11px]">Status</th>
+                  <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[11px] text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-brand-100">
                 {orders.map((order) => (
-                  <tr key={order._id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{order.orderId}</td>
-                    <td className="px-4 py-3">
-                      <div>{order.customerName}</div>
-                      <div className="text-xs text-gray-500">{order.email}</div>
+                  <tr key={order._id} className="hover:bg-brand-50/30 transition-colors">
+                    <td className="px-5 py-4 font-bold text-charcoal-900">{order.orderId}</td>
+                    <td className="px-5 py-4">
+                      <span className="font-semibold text-charcoal-900 block">{order.customerName}</span>
+                      <span className="text-[11px] text-charcoal-400">{order.phone}</span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{order.phone}</td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {order.items.map((item) => `${item.name} ×${item.quantity}`).join(', ')}
+                    <td className="px-5 py-4 text-charcoal-700">
+                      {order.items?.map((item) => `${item.name} ×${item.quantity}`).join(', ')}
                     </td>
-                    <td className="px-4 py-3 font-medium">₹{order.totalAmount.toLocaleString()}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-5 py-4 font-serif font-bold text-charcoal-900">
+                      ₹{order.totalAmount?.toLocaleString()}
+                    </td>
+                    <td className="px-5 py-4 text-charcoal-400">
+                      {new Date(order.createdAt).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </td>
+                    <td className="px-5 py-4">
                       <select
                         value={order.status}
                         onChange={(e) => handleStatusChange(order._id, e.target.value)}
-                        className={`text-xs px-2 py-1 rounded-lg border font-medium ${
+                        className={`text-xs px-2.5 py-1 rounded-xl font-bold border transition-colors cursor-pointer ${
                           order.status === 'PLACED'
-                            ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
                             : order.status === 'SHIPPED'
-                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                            : 'bg-green-50 text-green-700 border-green-200'
+                            ? 'bg-blue-50 text-blue-800 border-blue-200'
+                            : 'bg-sage-50 text-sage-800 border-sage-200'
                         }`}
                       >
-                        <option value="PLACED">PLACED</option>
-                        <option value="SHIPPED">SHIPPED</option>
-                        <option value="DELIVERED">DELIVERED</option>
+                        <option value="PLACED">Crafting (PLACED)</option>
+                        <option value="SHIPPED">Dispatched (SHIPPED)</option>
+                        <option value="DELIVERED">Delivered to Patron</option>
                       </select>
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {new Date(order.createdAt).toLocaleDateString('en-IN')}
+                    <td className="px-5 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setSelectedOrder(order)}
+                          className="px-3 py-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 text-charcoal-800 font-semibold text-xs transition-colors flex items-center gap-1"
+                          title="View Order Details"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-brand-600" />
+                          <span>Inspect</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {orders.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                      No orders found
+                    <td colSpan={7} className="px-5 py-12 text-center text-charcoal-400">
+                      No orders match your filter criteria.
                     </td>
                   </tr>
                 )}
@@ -125,29 +388,59 @@ export default function AdminOrdersPage() {
             </table>
           </div>
 
+          {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 mt-6">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-4 py-2 text-sm border rounded-lg disabled:opacity-30 hover:bg-gray-50"
-              >
-                Previous
-              </button>
-              <span className="text-sm text-gray-600">
+            <div className="p-4 border-t border-brand-100 flex items-center justify-between text-xs text-charcoal-500">
+              <span>
                 Page {page} of {totalPages}
               </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-4 py-2 text-sm border rounded-lg disabled:opacity-30 hover:bg-gray-50"
-              >
-                Next
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="px-3 py-1.5 border border-brand-200 rounded-xl hover:bg-brand-50 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="px-3 py-1.5 border border-brand-200 rounded-xl hover:bg-brand-50 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           )}
-        </>
+        </div>
       )}
+
+      {/* Slide-over Drawer for Order Inspection */}
+      <OrderDetailsDrawer
+        order={selectedOrder}
+        isOpen={!!selectedOrder}
+        onClose={() => setSelectedOrder(null)}
+        onStatusUpdate={handleStatusChange}
+      />
+
+      {/* Manual / Offline Order Creation Modal */}
+      <ManualOrderModal
+        isOpen={showManualModal}
+        onClose={() => setShowManualModal(false)}
+        onOrderCreated={(newOrder) => {
+          setOrders((prev) => [newOrder, ...prev]);
+          setTotalCount((c) => c + 1);
+          fetchOrders();
+        }}
+      />
     </div>
+  );
+}
+
+export default function AdminOrdersPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner label="Loading orders hub..." />}>
+      <OrdersPageContent />
+    </Suspense>
   );
 }
