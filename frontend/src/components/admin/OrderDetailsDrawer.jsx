@@ -16,6 +16,7 @@ import {
   MessageCircle,
   BellRing,
   ExternalLink,
+  Trash2,
 } from 'lucide-react';
 import { getImageUrl } from '@/lib/image';
 
@@ -28,7 +29,7 @@ const TIMELINE_STEPS = [
   { key: 'DELIVERED', label: 'Delivered', desc: 'In patron home' },
 ];
 
-export default function OrderDetailsDrawer({ order, isOpen, onClose, onStatusUpdate }) {
+export default function OrderDetailsDrawer({ order, isOpen, onClose, onStatusUpdate, onDeleteOrder }) {
   const router = useRouter();
 
   useEffect(() => {
@@ -97,12 +98,24 @@ export default function OrderDetailsDrawer({ order, isOpen, onClose, onStatusUpd
               </div>
             </div>
 
-            <button
-              onClick={onClose}
-              className="p-2 text-charcoal-400 hover:text-charcoal-900 rounded-full"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              {onDeleteOrder && (
+                <button
+                  onClick={() => onDeleteOrder(order)}
+                  className="p-2 text-charcoal-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                  title="Delete Order & Restore Stock"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 text-charcoal-400 hover:text-charcoal-900 rounded-full transition-colors"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Drawer Body */}
@@ -240,6 +253,16 @@ export default function OrderDetailsDrawer({ order, isOpen, onClose, onStatusUpd
               <MessageCircle className="w-4 h-4 text-sage-600" />
               <span>Message Patron on WhatsApp</span>
             </a>
+
+            {onDeleteOrder && (
+              <button
+                onClick={() => onDeleteOrder(order)}
+                className="w-full py-2.5 px-4 rounded-2xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/80 font-semibold text-xs transition-colors flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4 text-red-600" />
+                <span>Delete Order Record & Restore Stock</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

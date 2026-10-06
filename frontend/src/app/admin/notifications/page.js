@@ -23,7 +23,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import useAdminStore from '@/store/adminStore';
-import { getAdminOrders } from '@/lib/api';
+import { getAdminOrders, sendNotification, getNotificationHistory } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 function NotificationCenterInner() {
@@ -44,6 +44,13 @@ function NotificationCenterInner() {
   const [activeTab, setActiveTab] = useState('compose'); // 'compose' | 'history' | 'templates'
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
+
+  // Sending state
+  const [isSending, setIsSending] = useState(false);
+
+  // Backend API History State
+  const [apiHistory, setApiHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Composer State
   const [channel, setChannel] = useState('EMAIL'); // 'EMAIL' | 'SMS'
@@ -113,6 +120,36 @@ function NotificationCenterInner() {
     loadOrders();
   }, [prefillOrder]);
 
+  // Load notification audit history from backend
+  const loadHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await getNotificationHistory({ limit: 50 });
+      if (res.data?.success && res.data?.data?.notifications) {
+        const records = res.data.data.notifications.map((n) => ({
+          id: n.notificationId || n._id,
+          sentAt: n.sentAt || n.createdAt,
+          customerName: n.metadata?.customerName || n.recipient,
+          customerEmail: n.type === 'EMAIL' ? n.recipient : '',
+          customerPhone: n.type === 'SMS' ? n.recipient : '',
+          channel: n.type,
+          templateName: n.metadata?.templateName || (n.subject ? n.subject : 'Custom Dispatch'),
+          orderId: n.metadata?.orderId || 'N/A',
+          status: n.status === 'SENT' ? 'Delivered' : n.status,
+        }));
+        setApiHistory(records);
+      }
+    } catch {
+      // Fallback silently to local store
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    loadHistory();
+  }, [activeTab]);
+
   // Synchronize active template when selectedTemplateId changes
   useEffect(() => {
     const activeTpl = templates.find((t) => t.id === selectedTemplateId) || templates[0];
@@ -167,8 +204,8 @@ function NotificationCenterInner() {
     toast.success(`Inserted {{${token}}}`);
   };
 
-  // Dispatch Notification
-  const handleSendNotification = (e) => {
+  // Dispatch Notification via Backend API
+  const handleSendNotification = async (e) => {
     e.preventDefault();
     if (!customerName.trim()) {
       toast.error('Please specify customer name');
@@ -182,27 +219,87 @@ function NotificationCenterInner() {
       toast.error('Please specify customer phone number');
       return;
     }
+    if (channel === 'EMAIL' && !previewSubject.trim()) {
+      toast.error('Please specify an email subject');
+      return;
+    }
+    if (!previewBody.trim()) {
+      toast.error('Please specify message body content');
+      return;
+    }
 
+    setIsSending(true);
     const currentTpl = templates.find((t) => t.id === selectedTemplateId);
 
-    addNotification({
-      customerName: customerName.trim(),
-      customerEmail: customerEmail.trim() || 'contact@weavestudio.in',
-      customerPhone: customerPhone.trim() || '+91 99999 99999',
-      orderId: orderId || 'N/A',
-      productName: productName || 'Handmade Creation',
-      channel,
-      templateName: currentTpl?.name || 'Custom Dispatch',
-    });
+    try {
+      const payload = {
+        type: channel.toLowerCase(),
+        to: [channel === 'EMAIL' ? customerEmail.trim() : customerPhone.trim()],
+        subject: previewSubject.trim(),
+        message: previewBody.trim(),
+        metadata: {
+          customerName: customerName.trim(),
+          orderId: orderId || 'N/A',
+          productName: productName || 'Handcrafted Crochet Piece',
+          templateName: currentTpl?.name || 'Custom Dispatch',
+          channel,
+        },
+      };
 
-    toast.success(
-      `${channel === 'EMAIL' ? 'Email letter' : 'SMS message'} dispatched successfully to ${customerName}!`
-    );
+      const res = await sendNotification(payload);
+      const notifId = res.data?.data?.notificationId || `notif_${Date.now()}`;
+
+      // Update local Zustand store
+      addNotification({
+        id: notifId,
+        customerName: customerName.trim(),
+        customerEmail: customerEmail.trim() || 'contact@weavestudio.in',
+        customerPhone: customerPhone.trim() || '+91 99999 99999',
+        orderId: orderId || 'N/A',
+        productName: productName || 'Handmade Creation',
+        channel,
+        templateName: currentTpl?.name || 'Custom Dispatch',
+        sentAt: new Date().toISOString(),
+        status: 'Delivered',
+      });
+
+      toast.success(
+        `${channel === 'EMAIL' ? 'Artisan Email Letter' : 'SMS Message'} dispatched successfully to ${customerName}!`
+      );
+
+      // Refresh history from backend
+      loadHistory();
+    } catch (err) {
+      console.error('Notification dispatch failed:', err);
+      const errMsg =
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to dispatch notification';
+      toast.error(errMsg);
+    } finally {
+      setIsSending(false);
+    }
   };
+
+  // Combined History (API Audit log + Local Store records)
+  const combinedHistory = useMemo(() => {
+    const map = new Map();
+    // Add API records first
+    for (const item of apiHistory) {
+      if (item.id) map.set(item.id, item);
+    }
+    // Add local records if not present
+    for (const item of notifications) {
+      if (item.id && !map.has(item.id)) {
+        map.set(item.id, item);
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
+  }, [apiHistory, notifications]);
 
   // Filtered History
   const filteredHistory = useMemo(() => {
-    return notifications.filter((n) => {
+    return combinedHistory.filter((n) => {
       if (historyChannel !== 'ALL' && n.channel !== historyChannel) return false;
       if (historySearch) {
         const q = historySearch.toLowerCase();
@@ -216,7 +313,7 @@ function NotificationCenterInner() {
       }
       return true;
     });
-  }, [notifications, historyChannel, historySearch]);
+  }, [combinedHistory, historyChannel, historySearch]);
 
   // Template Save
   const handleSaveTemplate = (e) => {
@@ -299,7 +396,7 @@ function NotificationCenterInner() {
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            <span>History ({notifications.length})</span>
+            <span>History ({combinedHistory.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('templates')}
@@ -532,12 +629,24 @@ function NotificationCenterInner() {
             {/* Dispatch Button */}
             <button
               onClick={handleSendNotification}
-              className="w-full bg-charcoal-900 hover:bg-terracotta-600 text-white py-3 rounded-2xl text-xs font-semibold shadow-soft transition-all flex items-center justify-center gap-2 group"
+              disabled={isSending}
+              className="w-full bg-charcoal-900 hover:bg-terracotta-600 disabled:opacity-50 text-white py-3 rounded-2xl text-xs font-semibold shadow-soft transition-all flex items-center justify-center gap-2 group cursor-pointer disabled:cursor-not-allowed"
             >
-              <Send className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-              <span>
-                Dispatch {channel === 'EMAIL' ? 'Artisan Email Letter' : 'SMS Notification'}
-              </span>
+              {isSending ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>
+                    Sending {channel === 'EMAIL' ? 'Artisan Email Letter...' : 'SMS Notification...'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                  <span>
+                    Dispatch {channel === 'EMAIL' ? 'Artisan Email Letter' : 'SMS Notification'}
+                  </span>
+                </>
+              )}
             </button>
           </div>
 
